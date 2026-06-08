@@ -75,6 +75,89 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     lastStoredFile = null;
     sendResponse({ success: true });
     return true;
+  } else if (message.type === 'WHATSAPP_INJECT_FILE') {
+    if (lastStoredFile) {
+      console.log('background.js: Inyectando archivo en el MAIN world de la pestaña:', sender.tab.id);
+      
+      chrome.scripting.executeScript({
+        target: { tabId: sender.tab.id },
+        world: 'MAIN',
+        args: [lastStoredFile.filename, lastStoredFile.pdfBase64],
+        func: (filename, base64Data) => {
+          console.log('AutoTech Main World: Iniciando inyección de', filename);
+          
+          function base64ToBlob(base64, type = 'application/pdf') {
+            const byteCharacters = atob(base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            return new Blob([byteArray], { type: type });
+          }
+
+          function simulateFileDrop(target, file) {
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            
+            try {
+              dataTransfer.effectAllowed = 'all';
+              dataTransfer.dropEffect = 'copy';
+            } catch (e) {}
+
+            const createDragEvent = (type) => {
+              const event = new DragEvent(type, {
+                bubbles: true,
+                cancelable: true
+              });
+              Object.defineProperty(event, 'dataTransfer', {
+                value: dataTransfer,
+                writable: false,
+                configurable: true
+              });
+              return event;
+            };
+
+            target.dispatchEvent(createDragEvent('dragenter'));
+            target.dispatchEvent(createDragEvent('dragover'));
+            target.dispatchEvent(createDragEvent('drop'));
+          }
+
+          try {
+            const blob = base64ToBlob(base64Data, 'application/pdf');
+            const file = new File([blob], filename, { type: 'application/pdf' });
+            
+            const targets = [
+              document.querySelector('#main'),
+              document.querySelector('#app'),
+              document.body
+            ];
+            
+            let dispatched = false;
+            targets.forEach(t => {
+              if (t) {
+                simulateFileDrop(t, file);
+                dispatched = true;
+              }
+            });
+            
+            console.log('AutoTech Main World: Eventos despachados. Inyección completada.');
+          } catch (err) {
+            console.error('AutoTech Main World: Error en inyección:', err);
+          }
+        }
+      }, (results) => {
+        if (chrome.runtime.lastError) {
+          console.error('background.js: Error en executeScript:', chrome.runtime.lastError.message);
+          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          sendResponse({ success: true });
+        }
+      });
+      return true;
+    } else {
+      sendResponse({ success: false, error: 'No hay archivo almacenado.' });
+    }
   }
   return true; // Habilita respuesta asíncrona
 });
