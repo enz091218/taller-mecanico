@@ -3,23 +3,25 @@ console.log('AutoTech WhatsApp Web Injector: Inyectado con éxito.');
 // Crear banner de diagnóstico flotante
 let diagnosticBadge = null;
 function showDiagnosticStatus(text, statusType = 'info') {
-  if (!diagnosticBadge) {
-    diagnosticBadge = document.createElement('div');
-    diagnosticBadge.style.cssText = `
-      position: fixed;
-      top: 15px;
-      right: 15px;
-      z-index: 99999;
-      padding: 10px 16px;
-      border-radius: 8px;
-      font-family: 'Inter', sans-serif;
-      font-size: 12px;
-      font-weight: 700;
-      color: white;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      transition: all 0.3s ease;
-      pointer-events: none;
-    `;
+  if (!diagnosticBadge || !document.body.contains(diagnosticBadge)) {
+    if (!diagnosticBadge) {
+      diagnosticBadge = document.createElement('div');
+      diagnosticBadge.style.cssText = `
+        position: fixed;
+        top: 15px;
+        right: 15px;
+        z-index: 99999;
+        padding: 10px 16px;
+        border-radius: 8px;
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        font-weight: 700;
+        color: white;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        transition: all 0.3s ease;
+        pointer-events: none;
+      `;
+    }
     document.body.appendChild(diagnosticBadge);
   }
   
