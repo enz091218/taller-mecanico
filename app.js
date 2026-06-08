@@ -10191,11 +10191,14 @@ window.sendDocumentViaWhatsApp = function(phone, filename, pdfBlob) {
       };
       
       // Escuchador de respuesta único
+      let timeoutId = null;
+      
       const responseListener = function(event) {
         if (event.source !== window || !event.data || event.data.type !== 'WHATSAPP_SEND_RESPONSE') {
           return;
         }
         
+        if (timeoutId) clearTimeout(timeoutId);
         window.removeEventListener('message', responseListener);
         toast.remove();
         
@@ -10239,6 +10242,22 @@ window.sendDocumentViaWhatsApp = function(phone, filename, pdfBlob) {
           }
         }
       };
+      
+      if (!isMeta) {
+        timeoutId = setTimeout(() => {
+          window.removeEventListener('message', responseListener);
+          toast.remove();
+          console.warn("sendDocumentViaWhatsApp: Extensión no respondió a tiempo. Ejecutando fallback.");
+          
+          alert("La extensión de Chrome no respondió. Se procederá a abrir el chat directo sin la auto-carga del PDF.");
+          
+          const docType = filename.includes('Presupuesto') ? 'el presupuesto' : (filename.includes('Certificado') ? 'el certificado de entrega' : 'la factura');
+          const text = encodeURIComponent(`Hola! Le envío ${docType} de su vehículo. Saludos.`);
+          const url = `https://api.whatsapp.com/send?phone=${clientPhone}&text=${text}`;
+          window.open(url, '_blank');
+          resolve({ success: true, fallback: true });
+        }, 4000);
+      }
       
       window.addEventListener('message', responseListener);
       
