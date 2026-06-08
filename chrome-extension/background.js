@@ -123,27 +123,110 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             target.dispatchEvent(createDragEvent('drop'));
           }
 
+          function uploadFileViaInput(file) {
+            return new Promise((resolve, reject) => {
+              // 1. Intentar buscar el input de tipo archivo directamente en el DOM
+              let inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+              let docInput = inputs.find(input => {
+                const accept = input.getAttribute('accept') || '';
+                return accept.includes('*') || (!accept.includes('image') && !accept.includes('video'));
+              }) || inputs[0];
+
+              if (docInput) {
+                try {
+                  const dataTransfer = new DataTransfer();
+                  dataTransfer.items.add(file);
+                  docInput.files = dataTransfer.files;
+                  docInput.dispatchEvent(new Event('change', { bubbles: true }));
+                  console.log('AutoTech Main World: Archivo inyectado vía input directo.');
+                  resolve(true);
+                  return;
+                } catch (e) {
+                  console.error('AutoTech Main World: Falló inyección en input directo:', e);
+                }
+              }
+
+              // 2. Si no se encontró, hacer clic en el botón de adjuntar (clip o plus)
+              console.log('AutoTech Main World: Buscando botón de adjuntar...');
+              const attachSelectors = [
+                'button[title="Adjuntar"]',
+                'button[aria-label="Adjuntar"]',
+                '[data-testid="plus"]',
+                '[data-testid="clip"]',
+                '[data-icon="plus"]',
+                '[data-icon="clip"]',
+                'span[data-icon="plus-large"]'
+              ];
+              
+              let attachBtn = null;
+              for (const sel of attachSelectors) {
+                attachBtn = document.querySelector(sel);
+                if (attachBtn) break;
+              }
+
+              if (attachBtn) {
+                attachBtn.click();
+                console.log('AutoTech Main World: Botón de adjuntar clickeado. Esperando input...');
+                
+                setTimeout(() => {
+                  inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+                  docInput = inputs.find(input => {
+                    const accept = input.getAttribute('accept') || '';
+                    return accept.includes('*') || (!accept.includes('image') && !accept.includes('video'));
+                  }) || inputs[0];
+
+                  if (docInput) {
+                    try {
+                      const dataTransfer = new DataTransfer();
+                      dataTransfer.items.add(file);
+                      docInput.files = dataTransfer.files;
+                      docInput.dispatchEvent(new Event('change', { bubbles: true }));
+                      console.log('AutoTech Main World: Archivo inyectado tras abrir menú.');
+                      resolve(true);
+                      return;
+                    } catch (e) {
+                      console.error('AutoTech Main World: Falló inyección tras abrir menú:', e);
+                    }
+                  }
+                  reject(new Error('No se encontró input de archivos tras clic.'));
+                }, 400);
+              } else {
+                reject(new Error('No se encontró botón de adjuntar.'));
+              }
+            });
+          }
+
           try {
             const blob = base64ToBlob(base64Data, 'application/pdf');
             const file = new File([blob], filename, { type: 'application/pdf' });
             
-            const targets = [
-              document.querySelector('#main'),
-              document.querySelector('#app'),
-              document.body
-            ];
-            
-            let dispatched = false;
-            targets.forEach(t => {
-              if (t) {
-                simulateFileDrop(t, file);
-                dispatched = true;
-              }
-            });
-            
-            console.log('AutoTech Main World: Eventos despachados. Inyección completada.');
+            uploadFileViaInput(file)
+              .then(() => {
+                console.log('AutoTech Main World: Inyección por input exitosa.');
+              })
+              .catch(err => {
+                console.warn('AutoTech Main World: Falló método input, usando Drag & Drop:', err.message);
+                
+                const targets = [
+                  document.querySelector('#main'),
+                  document.querySelector('#app'),
+                  document.body
+                ];
+                
+                let dispatched = false;
+                targets.forEach(t => {
+                  if (t) {
+                    simulateFileDrop(t, file);
+                    dispatched = true;
+                  }
+                });
+                
+                if (dispatched) {
+                  console.log('AutoTech Main World: Drag & Drop simulado.');
+                }
+              });
           } catch (err) {
-            console.error('AutoTech Main World: Error en inyección:', err);
+            console.error('AutoTech Main World: Excepción general:', err);
           }
         }
       }, (results) => {
