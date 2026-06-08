@@ -56,9 +56,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
         const cleanStoredPhone = fileData.phone ? fileData.phone.replace(/\D/g, '') : '';
         
-        // Coincide si el teléfono es igual o si se guardó hace menos de 2 minutos (para evitar pérdidas por redirecciones)
+        // Coincide si el teléfono es igual o si se guardó hace menos de 5 minutos (para evitar pérdidas por redirecciones)
         const phoneMatches = cleanPhone && (cleanPhone.includes(cleanStoredPhone) || cleanStoredPhone.includes(cleanPhone));
-        const isRecent = timeDiff < 120000; // 2 minutos
+        const isRecent = timeDiff < 300000; // 5 minutos
         
         if (phoneMatches || isRecent) {
           console.log('background.js: Archivo encontrado y listo para enviar.', fileData.filename);
