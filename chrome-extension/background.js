@@ -125,12 +125,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
           function uploadFileViaInput(file) {
             return new Promise((resolve, reject) => {
+              const findDocInput = () => {
+                let inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+                return inputs.find(input => {
+                  const accept = input.getAttribute('accept') || '';
+                  // Si el accept incluye image o video, NO es el input de documentos
+                  if (accept.includes('image') || accept.includes('video')) {
+                    return false;
+                  }
+                  // Queremos el input con accept="*" o vacío o que tenga "pdf"
+                  return accept === '*' || accept.includes('pdf') || accept === '';
+                });
+              };
+
               // 1. Intentar buscar el input de tipo archivo directamente en el DOM
-              let inputs = Array.from(document.querySelectorAll('input[type="file"]'));
-              let docInput = inputs.find(input => {
-                const accept = input.getAttribute('accept') || '';
-                return accept.includes('*') || (!accept.includes('image') && !accept.includes('video'));
-              }) || inputs[0];
+              let docInput = findDocInput();
 
               if (docInput) {
                 try {
@@ -169,11 +178,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 console.log('AutoTech Main World: Botón de adjuntar clickeado. Esperando input...');
                 
                 setTimeout(() => {
-                  inputs = Array.from(document.querySelectorAll('input[type="file"]'));
-                  docInput = inputs.find(input => {
-                    const accept = input.getAttribute('accept') || '';
-                    return accept.includes('*') || (!accept.includes('image') && !accept.includes('video'));
-                  }) || inputs[0];
+                  docInput = findDocInput();
 
                   if (docInput) {
                     try {
@@ -188,8 +193,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                       console.error('AutoTech Main World: Falló inyección tras abrir menú:', e);
                     }
                   }
-                  reject(new Error('No se encontró input de archivos tras clic.'));
-                }, 400);
+                  reject(new Error('No se encontró input de documentos tras abrir menú.'));
+                }, 450);
               } else {
                 reject(new Error('No se encontró botón de adjuntar.'));
               }
