@@ -3127,11 +3127,30 @@ window.exitDetailedReception = function() {
 window.openFichaClienteFromBanner = function() {
   const vehicle = vehicles.find(v => v.id === activeReceptionVehicleId);
   if (!vehicle) return;
-  const clientObj = clients.find(c => c.name.trim().toLowerCase() === (vehicle.client || '').trim().toLowerCase());
+  
+  // Buscar por nombre (ignorando mayúsculas/minúsculas y espacios de sobra)
+  let clientObj = clients.find(c => c.name.trim().toLowerCase() === (vehicle.client || '').trim().toLowerCase());
+  
+  // Si no coincide, buscar por teléfono
+  if (!clientObj && vehicle.clientPhone) {
+    const cleanPhone = vehicle.clientPhone.replace(/\D/g, '');
+    if (cleanPhone) {
+      clientObj = clients.find(c => (c.phone || '').replace(/\D/g, '') === cleanPhone);
+    }
+  }
+  
+  // Si no coincide, buscar por email
+  if (!clientObj && vehicle.clientEmail) {
+    const cleanEmail = vehicle.clientEmail.trim().toLowerCase();
+    if (cleanEmail) {
+      clientObj = clients.find(c => (c.email || '').trim().toLowerCase() === cleanEmail);
+    }
+  }
+  
   if (clientObj) {
     openClientDetailsModal(clientObj.id);
   } else {
-    alert('Cliente no encontrado en la base de datos.');
+    alert(`El cliente "${vehicle.client || 'Asociado'}" no está registrado en la base de datos de Clientes. Regístrelo primero desde la pestaña de Clientes.`);
   }
 };
 
@@ -7075,7 +7094,8 @@ function updateClientsMetrics() {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   
   const newClients = clients.filter(c => {
-    const createdDate = new Date((c.createdAt || '2026-05-23') + 'T12:00:00');
+    const rawDateStr = c.createdAt || '2026-05-23';
+    const createdDate = rawDateStr.includes('T') ? new Date(rawDateStr) : new Date(rawDateStr + 'T12:00:00');
     return createdDate >= thirtyDaysAgo;
   }).length;
   
@@ -7128,7 +7148,7 @@ function drawClientesTable() {
 
     // Format Date real dynamic!
     const dateStr = c.createdAt || '2026-05-23';
-    const dateObj = new Date(dateStr + 'T12:00:00');
+    const dateObj = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr + 'T12:00:00');
     const formattedDate = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
 
     return `
@@ -7235,7 +7255,7 @@ window.openClientDetailsModal = function(clientId) {
   document.getElementById('cd-name').textContent = client.name || 'Sin Nombre';
   
   const dateStr = client.createdAt || '2026-05-23';
-  const dateObj = new Date(dateStr + 'T12:00:00');
+  const dateObj = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr + 'T12:00:00');
   const formattedDate = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
   document.getElementById('cd-since').textContent = `Cliente registrado el ${formattedDate}`;
 
