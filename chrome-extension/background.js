@@ -1,5 +1,5 @@
 // Service Worker de fondo para retransmitir mensajes entre pestañas
-let lastStoredFile = null;
+// lastStoredFile se guarda de forma persistente en chrome.storage.local para soportar suspensiones MV3
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'ADD_PART') {
@@ -49,308 +49,322 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const { phone } = message;
     console.log('background.js: Solicitud de archivo para el teléfono:', phone);
     
-    if (lastStoredFile) {
-      const timeDiff = Date.now() - lastStoredFile.timestamp;
-      const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
-      const cleanStoredPhone = lastStoredFile.phone ? lastStoredFile.phone.replace(/\D/g, '') : '';
-      
-      // Coincide si el teléfono es igual o si se guardó hace menos de 2 minutos (para evitar pérdidas por redirecciones)
-      const phoneMatches = cleanPhone && (cleanPhone.includes(cleanStoredPhone) || cleanStoredPhone.includes(cleanPhone));
-      const isRecent = timeDiff < 120000; // 2 minutos
-      
-      if (phoneMatches || isRecent) {
-        console.log('background.js: Archivo encontrado y listo para enviar.', lastStoredFile.filename);
-        sendResponse({ success: true, file: lastStoredFile });
+    chrome.storage.local.get(['lastStoredFile'], (result) => {
+      const fileData = result.lastStoredFile;
+      if (fileData) {
+        const timeDiff = Date.now() - fileData.timestamp;
+        const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
+        const cleanStoredPhone = fileData.phone ? fileData.phone.replace(/\D/g, '') : '';
+        
+        // Coincide si el teléfono es igual o si se guardó hace menos de 2 minutos (para evitar pérdidas por redirecciones)
+        const phoneMatches = cleanPhone && (cleanPhone.includes(cleanStoredPhone) || cleanStoredPhone.includes(cleanPhone));
+        const isRecent = timeDiff < 120000; // 2 minutos
+        
+        if (phoneMatches || isRecent) {
+          console.log('background.js: Archivo encontrado y listo para enviar.', fileData.filename);
+          sendResponse({ success: true, file: fileData });
+        } else {
+          console.log('background.js: Teléfono no coincide o archivo muy antiguo.', { phoneMatches, isRecent });
+          sendResponse({ success: false, error: 'No hay archivos recientes para este número.' });
+        }
       } else {
-        console.log('background.js: Teléfono no coincide o archivo muy antiguo.', { phoneMatches, isRecent });
-        sendResponse({ success: false, error: 'No hay archivos recientes para este número.' });
+        console.log('background.js: No hay ningún archivo guardado.');
+        sendResponse({ success: false, error: 'No hay archivos guardados.' });
       }
-    } else {
-      console.log('background.js: No hay ningún archivo guardado.');
-      sendResponse({ success: false, error: 'No hay archivos guardados.' });
-    }
+    });
     return true;
   } else if (message.type === 'WHATSAPP_CLEAR_STORED_FILE') {
     console.log('background.js: Limpiando archivo guardado.');
-    lastStoredFile = null;
-    sendResponse({ success: true });
+    chrome.storage.local.remove(['lastStoredFile'], () => {
+      sendResponse({ success: true });
+    });
     return true;
   } else if (message.type === 'WHATSAPP_INJECT_FILE') {
-    if (lastStoredFile) {
-      console.log('background.js: Inyectando archivo en el MAIN world de la pestaña:', sender.tab.id);
-      
-      chrome.scripting.executeScript({
-        target: { tabId: sender.tab.id },
-        world: 'MAIN',
-        args: [lastStoredFile.filename, lastStoredFile.pdfBase64, lastStoredFile.messageText],
-        func: (filename, base64Data, messageText) => {
-          console.log('AutoTech Main World: Iniciando inyección de', filename);
-          
-          function base64ToBlob(base64, type = 'application/pdf') {
-            const byteCharacters = atob(base64);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            return new Blob([byteArray], { type: type });
-          }
-
-          function simulateFileDrop(target, file) {
-            const dataTransfer = new DataTransfer();
-            dataTransfer.items.add(file);
+    chrome.storage.local.get(['lastStoredFile'], (result) => {
+      const fileData = result.lastStoredFile;
+      if (fileData) {
+        console.log('background.js: Inyectando archivo en el MAIN world de la pestaña:', sender.tab.id);
+        
+        chrome.scripting.executeScript({
+          target: { tabId: sender.tab.id },
+          world: 'MAIN',
+          args: [fileData.filename, fileData.pdfBase64, fileData.messageText],
+          func: (filename, base64Data, messageText) => {
+            console.log('AutoTech Main World: Iniciando inyección de', filename);
             
-            try {
-              dataTransfer.effectAllowed = 'all';
-              dataTransfer.dropEffect = 'copy';
-            } catch (e) {}
+            function base64ToBlob(base64, type = 'application/pdf') {
+              const byteCharacters = atob(base64);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              return new Blob([byteArray], { type: type });
+            }
 
-            const createDragEvent = (type) => {
-              const event = new DragEvent(type, {
-                bubbles: true,
-                cancelable: true
-              });
-              Object.defineProperty(event, 'dataTransfer', {
-                value: dataTransfer,
-                writable: false,
-                configurable: true
-              });
-              return event;
-            };
+            function simulateFileDrop(target, file) {
+              const dataTransfer = new DataTransfer();
+              dataTransfer.items.add(file);
+              
+              try {
+                dataTransfer.effectAllowed = 'all';
+                dataTransfer.dropEffect = 'copy';
+              } catch (e) {}
 
-            target.dispatchEvent(createDragEvent('dragenter'));
-            target.dispatchEvent(createDragEvent('dragover'));
-            target.dispatchEvent(createDragEvent('drop'));
-          }
-
-          function uploadFileViaInput(file) {
-            return new Promise((resolve, reject) => {
-              const findDocInput = () => {
-                let inputs = Array.from(document.querySelectorAll('input[type="file"]'));
-                return inputs.find(input => {
-                  const accept = input.getAttribute('accept') || '';
-                  // Si el accept incluye image o video, NO es el input de documentos
-                  if (accept.includes('image') || accept.includes('video')) {
-                    return false;
-                  }
-                  // Queremos el input con accept="*" o vacío o que tenga "pdf"
-                  return accept === '*' || accept.includes('pdf') || accept === '';
+              const createDragEvent = (type) => {
+                const event = new DragEvent(type, {
+                  bubbles: true,
+                  cancelable: true
                 });
+                Object.defineProperty(event, 'dataTransfer', {
+                  value: dataTransfer,
+                  writable: false,
+                  configurable: true
+                });
+                return event;
               };
 
-              // 1. Intentar buscar el input de tipo archivo directamente en el DOM
-              let docInput = findDocInput();
-
-              if (docInput) {
-                try {
-                  const dataTransfer = new DataTransfer();
-                  dataTransfer.items.add(file);
-                  docInput.files = dataTransfer.files;
-                  docInput.dispatchEvent(new Event('change', { bubbles: true }));
-                  console.log('AutoTech Main World: Archivo inyectado vía input directo.');
-                  resolve(true);
-                  return;
-                } catch (e) {
-                  console.error('AutoTech Main World: Falló inyección en input directo:', e);
-                }
-              }
-
-              // 2. Si no se encontró, hacer clic en el botón de adjuntar (clip o plus)
-              console.log('AutoTech Main World: Buscando botón de adjuntar...');
-              const attachSelectors = [
-                'button[title="Adjuntar"]',
-                'button[aria-label="Adjuntar"]',
-                '[data-testid="plus"]',
-                '[data-testid="clip"]',
-                '[data-icon="plus"]',
-                '[data-icon="clip"]',
-                'span[data-icon="plus-large"]'
-              ];
-              
-              let attachBtn = null;
-              for (const sel of attachSelectors) {
-                attachBtn = document.querySelector(sel);
-                if (attachBtn) break;
-              }
-
-              if (attachBtn) {
-                attachBtn.click();
-                console.log('AutoTech Main World: Botón de adjuntar clickeado. Esperando input...');
-                
-                setTimeout(() => {
-                  docInput = findDocInput();
-
-                  if (docInput) {
-                    try {
-                      const dataTransfer = new DataTransfer();
-                      dataTransfer.items.add(file);
-                      docInput.files = dataTransfer.files;
-                      docInput.dispatchEvent(new Event('change', { bubbles: true }));
-                      console.log('AutoTech Main World: Archivo inyectado tras abrir menú.');
-                      
-                      // Cerrar el menú de adjuntos para que no se quede abierto en pantalla
-                      setTimeout(() => {
-                        try {
-                          const menuOpen = document.querySelector('span[data-icon="attach-document"]') || 
-                                           document.querySelector('[data-testid="mi-document"]') ||
-                                           document.querySelector('ul li div[role="button"]');
-                          if (menuOpen) {
-                            let closeBtn = null;
-                            for (const sel of attachSelectors) {
-                              closeBtn = document.querySelector(sel);
-                              if (closeBtn) break;
-                            }
-                            if (closeBtn) {
-                              closeBtn.click();
-                              console.log('AutoTech Main World: Menú de adjuntar cerrado con éxito.');
-                            }
-                          }
-                        } catch (closeErr) {
-                          console.warn('AutoTech Main World: No se pudo cerrar el menú de adjuntar:', closeErr);
-                        }
-                      }, 100);
-
-                      resolve(true);
-                      return;
-                    } catch (e) {
-                      console.error('AutoTech Main World: Falló inyección tras abrir menú:', e);
-                    }
-                  }
-                  reject(new Error('No se encontró input de documentos tras abrir menú.'));
-                }, 450);
-              } else {
-                reject(new Error('No se encontró botón de adjuntar.'));
-              }
-            });
-          }
-
-          function writeCaption(text) {
-            if (!text) {
-              console.log('AutoTech Main World: No hay texto de pie de página para escribir.');
-              window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: true, message: 'Archivo cargado sin pie' }, '*');
-              return;
+              target.dispatchEvent(createDragEvent('dragenter'));
+              target.dispatchEvent(createDragEvent('dragover'));
+              target.dispatchEvent(createDragEvent('drop'));
             }
-            console.log('AutoTech Main World: Intentando escribir pie del archivo:', text);
-            let attempts = 0;
-            const maxAttempts = 25; // 5 segundos
-            const interval = setInterval(() => {
-              attempts++;
-              
-              // Buscar todos los div contenteditable
-              const editables = Array.from(document.querySelectorAll('div[contenteditable="true"]'));
-              
-              // Intentar identificar el input del caption
-              let captionInput = editables.find(el => {
-                const testId = el.getAttribute('data-testid');
-                const ariaPlaceholder = el.getAttribute('aria-placeholder') || '';
-                const dataPlaceholder = el.getAttribute('data-placeholder') || '';
-                const label = el.getAttribute('aria-label') || '';
-                
-                return testId === 'media-editor-caption-input' || 
-                       testId === 'caption-input-text-area' ||
-                       ariaPlaceholder.toLowerCase().includes('comentario') || 
-                       ariaPlaceholder.toLowerCase().includes('caption') || 
-                       ariaPlaceholder.toLowerCase().includes('añade') ||
-                       dataPlaceholder.toLowerCase().includes('comentario') || 
-                       dataPlaceholder.toLowerCase().includes('caption') ||
-                       label.toLowerCase().includes('comentario') || 
-                       label.toLowerCase().includes('caption');
-              });
-              
-              if (!captionInput && editables.length > 0) {
-                // Si no se encuentra específicamente, tomamos el que no coincida con el composer principal
-                captionInput = editables.find(el => {
-                  const testId = el.getAttribute('data-testid') || '';
-                  const id = el.id || '';
-                  const className = el.className || '';
-                  return !testId.includes('compose') && 
-                         !testId.includes('conversation') && 
-                         !className.includes('compose') && 
-                         !id.includes('compose');
-                });
-              }
-              
-              if (captionInput) {
-                clearInterval(interval);
-                console.log('AutoTech Main World: Campo de pie de archivo encontrado. Escribiendo...');
-                try {
-                  captionInput.focus();
-                  
-                  // Limpiar contenido existente
-                  captionInput.textContent = '';
-                  
-                  // Usar execCommand para simular la escritura de manera compatible con React
-                  document.execCommand('insertText', false, text);
-                  
-                  // Lanzar eventos para asegurar que React se entere de los cambios
-                  captionInput.dispatchEvent(new Event('input', { bubbles: true }));
-                  captionInput.dispatchEvent(new Event('change', { bubbles: true }));
-                  
-                  console.log('AutoTech Main World: Pie de archivo escrito con éxito.');
-                  window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: true, message: 'Archivo y pie cargados' }, '*');
-                } catch (e) {
-                  console.error('AutoTech Main World: Error al escribir pie de archivo:', e);
-                  window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: true, message: 'Archivo cargado, falló pie' }, '*');
-                }
-              } else if (attempts >= maxAttempts) {
-                clearInterval(interval);
-                console.warn('AutoTech Main World: No se encontró el campo de pie de archivo tras varios intentos.');
-                window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: true, message: 'Archivo cargado sin pie' }, '*');
-              }
-            }, 200);
-          }
 
-          try {
-            const blob = base64ToBlob(base64Data, 'application/pdf');
-            const file = new File([blob], filename, { type: 'application/pdf' });
-            
-            uploadFileViaInput(file)
-              .then(() => {
-                console.log('AutoTech Main World: Inyección por input exitosa.');
-                writeCaption(messageText);
-              })
-              .catch(err => {
-                console.warn('AutoTech Main World: Falló método input, usando Drag & Drop:', err.message);
-                
-                const targets = [
-                  document.querySelector('#main'),
-                  document.querySelector('#app'),
-                  document.body
+            function uploadFileViaInput(file) {
+              return new Promise((resolve, reject) => {
+                const findDocInput = () => {
+                  let inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+                  return inputs.find(input => {
+                    const accept = (input.getAttribute('accept') || '').toLowerCase();
+                    // Si el accept incluye image, video o audio, NO es el input de documentos
+                    if (accept.includes('image') || accept.includes('video') || accept.includes('audio')) {
+                      return false;
+                    }
+                    return true; // Cualquier otro input (documento) es válido!
+                  });
+                };
+
+                // 1. Intentar buscar el input de tipo archivo directamente en el DOM
+                let docInput = findDocInput();
+
+                if (docInput) {
+                  try {
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    docInput.files = dataTransfer.files;
+                    docInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    console.log('AutoTech Main World: Archivo inyectado vía input directo.');
+                    resolve(true);
+                    return;
+                  } catch (e) {
+                    console.error('AutoTech Main World: Falló inyección en input directo:', e);
+                  }
+                }
+
+                // 2. Si no se encontró, hacer clic en el botón de adjuntar (clip o plus)
+                console.log('AutoTech Main World: Buscando botón de adjuntar...');
+                const attachSelectors = [
+                  'button[title="Adjuntar"]',
+                  'button[aria-label="Adjuntar"]',
+                  '[data-testid="plus"]',
+                  '[data-testid="clip"]',
+                  '[data-icon="plus"]',
+                  '[data-icon="clip"]',
+                  'span[data-icon="plus-large"]'
                 ];
                 
-                let dispatched = false;
-                targets.forEach(t => {
-                  if (t) {
-                    simulateFileDrop(t, file);
-                    dispatched = true;
-                  }
-                });
-                
-                if (dispatched) {
-                  console.log('AutoTech Main World: Drag & Drop simulado.');
-                  writeCaption(messageText);
+                let attachBtn = null;
+                for (const sel of attachSelectors) {
+                  attachBtn = document.querySelector(sel);
+                  if (attachBtn) break;
+                }
+
+                if (attachBtn) {
+                  attachBtn.click();
+                  console.log('AutoTech Main World: Botón de adjuntar clickeado. Esperando input...');
+                  
+                  setTimeout(() => {
+                    docInput = findDocInput();
+
+                    if (docInput) {
+                      try {
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(file);
+                        docInput.files = dataTransfer.files;
+                        docInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        console.log('AutoTech Main World: Archivo inyectado tras abrir menú.');
+                        
+                        // Cerrar el menú de adjuntos para que no se quede abierto en pantalla
+                        setTimeout(() => {
+                          try {
+                            const menuOpen = document.querySelector('span[data-icon="attach-document"]') || 
+                                             document.querySelector('[data-testid="mi-document"]') ||
+                                             document.querySelector('ul li div[role="button"]');
+                            if (menuOpen) {
+                              let closeBtn = null;
+                              for (const sel of attachSelectors) {
+                                closeBtn = document.querySelector(sel);
+                                if (closeBtn) break;
+                              }
+                              if (closeBtn) {
+                                closeBtn.click();
+                                console.log('AutoTech Main World: Menú de adjuntar cerrado con éxito.');
+                              }
+                            }
+                          } catch (closeErr) {
+                            console.warn('AutoTech Main World: No se pudo cerrar el menú de adjuntar:', closeErr);
+                          }
+                        }, 100);
+
+                        resolve(true);
+                        return;
+                      } catch (e) {
+                        console.error('AutoTech Main World: Falló inyección tras abrir menú:', e);
+                      }
+                    }
+                    reject(new Error('No se encontró input de documentos tras abrir menú.'));
+                  }, 450);
                 } else {
-                  console.error('AutoTech Main World: No se pudo inyectar el archivo.');
-                  window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: false, message: 'No se pudo inyectar' }, '*');
+                  reject(new Error('No se encontró botón de adjuntar.'));
                 }
               });
-          } catch (err) {
-            console.error('AutoTech Main World: Excepción general:', err);
-            window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: false, message: err.message }, '*');
+            }
+
+            function writeCaption(text) {
+              if (!text) {
+                console.log('AutoTech Main World: No hay texto de pie de página para escribir.');
+                window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: true, message: 'Archivo cargado sin pie' }, '*');
+                return;
+              }
+              console.log('AutoTech Main World: Intentando escribir pie del archivo:', text);
+              let attempts = 0;
+              const maxAttempts = 25; // 5 segundos
+              const interval = setInterval(() => {
+                attempts++;
+                
+                // Buscar todos los div contenteditable
+                const editables = Array.from(document.querySelectorAll('div[contenteditable="true"]'));
+                
+                // Intentar identificar el input del caption
+                let captionInput = editables.find(el => {
+                  const testId = el.getAttribute('data-testid');
+                  const ariaPlaceholder = el.getAttribute('aria-placeholder') || '';
+                  const dataPlaceholder = el.getAttribute('data-placeholder') || '';
+                  const label = el.getAttribute('aria-label') || '';
+                  
+                  return testId === 'media-editor-caption-input' || 
+                         testId === 'caption-input-text-area' ||
+                         ariaPlaceholder.toLowerCase().includes('comentario') || 
+                         ariaPlaceholder.toLowerCase().includes('caption') || 
+                         ariaPlaceholder.toLowerCase().includes('añade') ||
+                         dataPlaceholder.toLowerCase().includes('comentario') || 
+                         dataPlaceholder.toLowerCase().includes('caption') ||
+                         label.toLowerCase().includes('comentario') || 
+                         label.toLowerCase().includes('caption');
+                });
+                
+                if (!captionInput && editables.length > 0) {
+                  // Si no se encuentra específicamente, tomamos el que no coincida con el composer principal
+                  captionInput = editables.find(el => {
+                    const testId = el.getAttribute('data-testid') || '';
+                    const id = el.id || '';
+                    const className = el.className || '';
+                    return !testId.includes('compose') && 
+                           !testId.includes('conversation') && 
+                           !className.includes('compose') && 
+                           !id.includes('compose');
+                  });
+                }
+                
+                if (captionInput) {
+                  clearInterval(interval);
+                  console.log('AutoTech Main World: Campo de pie de archivo encontrado. Escribiendo...');
+                  try {
+                    captionInput.focus();
+                    
+                    // Crear un rango de selección y colocar el cursor dentro del elemento
+                    const selection = window.getSelection();
+                    const range = document.createRange();
+                    range.selectNodeContents(captionInput);
+                    range.collapse(false); // Colapsar al final
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    
+                    // Limpiar contenido existente
+                    captionInput.textContent = '';
+                    
+                    // Usar execCommand para simular la escritura de manera compatible con React
+                    document.execCommand('insertText', false, text);
+                    
+                    // Lanzar eventos para asegurar que React se entere de los cambios
+                    captionInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    captionInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    console.log('AutoTech Main World: Pie de archivo escrito con éxito.');
+                    window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: true, message: 'Archivo y pie cargados' }, '*');
+                  } catch (e) {
+                    console.error('AutoTech Main World: Error al escribir pie de archivo:', e);
+                    window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: true, message: 'Archivo cargado, falló pie' }, '*');
+                  }
+                } else if (attempts >= maxAttempts) {
+                  clearInterval(interval);
+                  console.warn('AutoTech Main World: No se encontró el campo de pie de archivo tras varios intentos.');
+                  window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: true, message: 'Archivo cargado sin pie' }, '*');
+                }
+              }, 200);
+            }
+
+            try {
+              const blob = base64ToBlob(base64Data, 'application/pdf');
+              const file = new File([blob], filename, { type: 'application/pdf' });
+              
+              uploadFileViaInput(file)
+                .then(() => {
+                  console.log('AutoTech Main World: Inyección por input exitosa.');
+                  writeCaption(messageText);
+                })
+                .catch(err => {
+                  console.warn('AutoTech Main World: Falló método input, usando Drag & Drop:', err.message);
+                  
+                  const targets = [
+                    document.querySelector('#main'),
+                    document.querySelector('#app'),
+                    document.body
+                  ];
+                  
+                  let dispatched = false;
+                  targets.forEach(t => {
+                    if (t) {
+                      simulateFileDrop(t, file);
+                      dispatched = true;
+                    }
+                  });
+                  
+                  if (dispatched) {
+                    console.log('AutoTech Main World: Drag & Drop simulado.');
+                    writeCaption(messageText);
+                  } else {
+                    console.error('AutoTech Main World: No se pudo inyectar el archivo.');
+                    window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: false, message: 'No se pudo inyectar' }, '*');
+                  }
+                });
+            } catch (err) {
+              console.error('AutoTech Main World: Excepción general:', err);
+              window.postMessage({ type: 'AUTOTECH_INJECTION_STATUS', success: false, message: err.message }, '*');
+            }
           }
-        }
-      }, (results) => {
-        if (chrome.runtime.lastError) {
-          console.error('background.js: Error en executeScript:', chrome.runtime.lastError.message);
-          sendResponse({ success: false, error: chrome.runtime.lastError.message });
-        } else {
-          sendResponse({ success: true });
-        }
-      });
-      return true;
-    } else {
-      sendResponse({ success: false, error: 'No hay archivo almacenado.' });
-    }
+        }, (results) => {
+          if (chrome.runtime.lastError) {
+            console.error('background.js: Error en executeScript:', chrome.runtime.lastError.message);
+            sendResponse({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            sendResponse({ success: true });
+          }
+        });
+      } else {
+        sendResponse({ success: false, error: 'No hay archivo almacenado.' });
+      }
+    });
+    return true;
   }
   return true; // Habilita respuesta asíncrona
 });
@@ -361,16 +375,18 @@ async function handleWhatsAppSendRequest(payload, sendResponse) {
   try {
     // Si el método es WhatsApp Web con Extensión, guardamos el archivo temporalmente en memoria
     if (method === 'wa_link_ext') {
-      console.log('background.js: Guardando PDF temporalmente para auto-carga en WhatsApp Web...');
-      lastStoredFile = {
+      console.log('background.js: Guardando PDF temporalmente en chrome.storage.local para auto-carga...');
+      const fileData = {
         phone: clientPhone,
         filename: filename,
         pdfBase64: pdfBase64,
         messageText: payload.messageText || '',
         timestamp: Date.now()
       };
-      sendResponse({
-        success: true
+      chrome.storage.local.set({ lastStoredFile: fileData }, () => {
+        sendResponse({
+          success: true
+        });
       });
       return;
     }
