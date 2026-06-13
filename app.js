@@ -45,6 +45,201 @@ let workshopConfig = {
   waPhoneId: '1179474771896317'
 };
 
+// --- INICIALIZACIÓN DE SUPABASE ---
+let supabase = null;
+const supabaseUrl = 'https://tdnrdvnqqpfmgarlozzu.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkbnJkdm5xcXBmbWdhcmxvenp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMDQyOTEsImV4cCI6MjA5Njg4MDI5MX0.c8-LMWmbEelCBvUFZ4CG2XNz_Y49eEHw2GqSeeHHmMM';
+
+if (window.supabase) {
+  supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+}
+
+// Sincronización en segundo plano con Supabase (Upsert)
+async function syncWithSupabase(tableName, data) {
+  if (!supabase) return;
+  try {
+    if (Array.isArray(data)) {
+      if (data.length === 0) return;
+      const mappedData = data.map(item => {
+        if (tableName === 'taller_vehicles') {
+          return {
+            id: item.id,
+            plate: item.plate,
+            brand: item.brand,
+            model: item.model,
+            year: item.year,
+            color: item.color,
+            motor: item.motor,
+            client: item.client,
+            client_phone: item.clientPhone,
+            client_email: item.clientEmail,
+            stage: item.stage,
+            value: item.value,
+            entry_date: item.entryDate,
+            entry_time: item.entryTime,
+            delivered: item.delivered || false,
+            kilometers: item.kilometers,
+            fuel_level: item.fuelLevel,
+            services: item.services || [],
+            has_details: item.hasDetails || false,
+            details_notes: item.detailsNotes,
+            quote_services: item.quoteServices || [],
+            quote_parts: item.quoteParts || [],
+            discount_percent: item.discountPercent || 0,
+            vat_inclusive: item.vatInclusive !== false,
+            quote_notes: item.quoteNotes,
+            quote_send_email: item.quoteSendEmail || false,
+            quote_completed: item.quoteCompleted || false
+          };
+        }
+        return { ...item };
+      });
+      const { error } = await supabase.from(tableName).upsert(mappedData);
+      if (error) console.error(`Error de sync en ${tableName}:`, error);
+    } else {
+      const configItem = {
+        id: 'workshop_config',
+        name: data.name,
+        phone1: data.phone1,
+        phone2: data.phone2,
+        address: data.address,
+        rut: data.rut,
+        cuit: data.cuit,
+        iva_condition: data.ivaCondition,
+        iibb: data.iibb,
+        inicio_act: data.inicioAct,
+        pv: data.pv,
+        wa_method: data.waMethod,
+        wa_token: data.waToken,
+        wa_phone_id: data.waPhoneId,
+        wa_msg_type: data.waMsgType,
+        wa_template_name: data.waTemplateName,
+        wa_template_lang: data.waTemplateLang,
+        wa_base_url: data.waBaseUrl
+      };
+      const { error } = await supabase.from(tableName).upsert(configItem);
+      if (error) console.error(`Error de sync en ${tableName}:`, error);
+    }
+  } catch (err) {
+    console.error("Error en sync:", err);
+  }
+}
+
+// Eliminar de Supabase
+async function deleteFromSupabase(tableName, id) {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from(tableName).delete().eq('id', id);
+    if (error) console.error(`Error al eliminar en Supabase (${tableName}):`, error);
+  } catch (err) {
+    console.error("Error al eliminar:", err);
+  }
+}
+
+// Cargar estado inicial desde Supabase
+async function loadStateFromSupabase() {
+  if (!supabase) return;
+  console.log("AutoTech: Sincronizando datos desde la base de datos Supabase...");
+  try {
+    const { data: configData, error: configError } = await supabase.from('taller_config').select('*').eq('id', 'workshop_config');
+    if (!configError && configData && configData.length > 0) {
+      const dbConfig = configData[0];
+      workshopConfig = {
+        name: dbConfig.name || workshopConfig.name,
+        phone1: dbConfig.phone1 || workshopConfig.phone1,
+        phone2: dbConfig.phone2 || workshopConfig.phone2,
+        address: dbConfig.address || workshopConfig.address,
+        rut: dbConfig.rut || workshopConfig.rut,
+        cuit: dbConfig.cuit || workshopConfig.cuit,
+        ivaCondition: dbConfig.iva_condition || workshopConfig.ivaCondition,
+        iibb: dbConfig.iibb || workshopConfig.iibb,
+        inicioAct: dbConfig.inicio_act || workshopConfig.inicioAct,
+        pv: dbConfig.pv || workshopConfig.pv,
+        waMethod: dbConfig.wa_method || workshopConfig.waMethod,
+        waToken: dbConfig.wa_token || workshopConfig.waToken,
+        waPhoneId: dbConfig.wa_phone_id || workshopConfig.waPhoneId,
+        waMsgType: dbConfig.wa_msg_type || workshopConfig.waMsgType,
+        waTemplateName: dbConfig.wa_template_name || workshopConfig.waTemplateName,
+        waTemplateLang: dbConfig.wa_template_lang || workshopConfig.waTemplateLang,
+        waBaseUrl: dbConfig.wa_base_url || workshopConfig.waBaseUrl
+      };
+      localStorage.setItem('taller_workshop_config', JSON.stringify(workshopConfig));
+      loadWorkshopConfig();
+    }
+    const { data: clientData, error: clientError } = await supabase.from('taller_clients').select('*');
+    if (!clientError && clientData && clientData.length > 0) {
+      clients = clientData;
+      localStorage.setItem('taller_clients', JSON.stringify(clients));
+    }
+    const { data: serviceData, error: serviceError } = await supabase.from('taller_services').select('*');
+    if (!serviceError && serviceData && serviceData.length > 0) {
+      servicesCatalog = serviceData;
+      localStorage.setItem('taller_services', JSON.stringify(servicesCatalog));
+    }
+    const { data: partData, error: partError } = await supabase.from('taller_parts').select('*');
+    if (!partError && partData && partData.length > 0) {
+      partsCatalog = partData;
+      localStorage.setItem('taller_parts', JSON.stringify(partsCatalog));
+    }
+    const { data: teamData, error: teamError } = await supabase.from('taller_team').select('*');
+    if (!teamError && teamData && teamData.length > 0) {
+      teamMembers = teamData;
+      localStorage.setItem('taller_team', JSON.stringify(teamMembers));
+    }
+    const { data: reminderData, error: reminderError } = await supabase.from('taller_reminders').select('*');
+    if (!reminderError && reminderData) {
+      reminders = reminderData;
+      localStorage.setItem('taller_reminders', JSON.stringify(reminders));
+    }
+    const { data: regData, error: regError } = await supabase.from('taller_vehicle_registry').select('*').eq('id', 'vehicle_registry');
+    if (!regError && regData && regData.length > 0) {
+      vehicleRegistry = {
+        brands: regData[0].brands || [],
+        models: regData[0].models || [],
+        engines: regData[0].engines || []
+      };
+      localStorage.setItem('taller_vehicle_registry', JSON.stringify(vehicleRegistry));
+    }
+    const { data: vehData, error: vehError } = await supabase.from('taller_vehicles').select('*');
+    if (!vehError && vehData) {
+      vehicles = vehData.map(item => ({
+        id: item.id,
+        plate: item.plate,
+        brand: item.brand,
+        model: item.model,
+        year: item.year,
+        color: item.color,
+        motor: item.motor,
+        client: item.client,
+        clientPhone: item.client_phone,
+        clientEmail: item.client_email,
+        stage: item.stage,
+        value: Number(item.value),
+        entryDate: item.entry_date,
+        entryTime: Number(item.entry_time),
+        delivered: item.delivered || false,
+        kilometers: Number(item.kilometers),
+        fuelLevel: item.fuel_level,
+        services: item.services || [],
+        hasDetails: item.has_details || false,
+        detailsNotes: item.details_notes,
+        quoteServices: item.quote_services || [],
+        quoteParts: item.quote_parts || [],
+        discountPercent: Number(item.discount_percent) || 0,
+        vatInclusive: item.vat_inclusive !== false,
+        quoteNotes: item.quote_notes,
+        quoteSendEmail: item.quote_send_email || false,
+        quoteCompleted: item.quote_completed || false
+      }));
+      localStorage.setItem('taller_vehicles', JSON.stringify(vehicles));
+    }
+    console.log("AutoTech: Datos de Supabase sincronizados localmente.");
+    if (typeof renderApp === 'function') renderApp();
+  } catch (err) {
+    console.error("Fallo al sincronizar desde Supabase:", err);
+  }
+}
+
 window.toggleWaConfigFields = function(method) {
   const container = document.getElementById('meta-wa-config-fields');
   if (container) {
@@ -201,6 +396,7 @@ window.saveWorkshopConfig = function() {
   };
   
   localStorage.setItem('taller_workshop_config', JSON.stringify(workshopConfig));
+  syncWithSupabase('taller_config', workshopConfig);
   
   // Re-inicializar iconos Lucide si es necesario
   if (typeof initLucide === 'function') initLucide();
@@ -234,6 +430,9 @@ document.addEventListener('DOMContentLoaded', () => {
     startGlobalTimer();
     renderApp();
     initDarkMode();
+    
+    // Iniciar carga en segundo plano de Supabase
+    loadStateFromSupabase();
   } catch(err) {
     console.error('Error crítico en la inicialización:', err);
     // Si algo falla, limpiar el estado y recargar una sola vez
@@ -1120,10 +1319,21 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem('taller_vehicles', JSON.stringify(vehicles));
+  syncWithSupabase('taller_vehicles', vehicles);
 }
 
 window.saveVehicleRegistry = function() {
   localStorage.setItem('taller_vehicle_registry', JSON.stringify(vehicleRegistry));
+  if (supabase) {
+    supabase.from('taller_vehicle_registry').upsert({
+      id: 'vehicle_registry',
+      brands: vehicleRegistry.brands,
+      models: vehicleRegistry.models,
+      engines: vehicleRegistry.engines
+    }).then(({ error }) => {
+      if (error) console.error("Error al sincronizar registro de vehículos con Supabase:", error);
+    });
+  }
 };
 
 window.loadVehicleRegistry = function() {
@@ -1227,22 +1437,27 @@ window.addToVehicleRegistry = function(brand, model, engine) {
 
 function saveClients() {
   localStorage.setItem('taller_clients', JSON.stringify(clients));
+  syncWithSupabase('taller_clients', clients);
 }
 
 function saveServices() {
   localStorage.setItem('taller_services', JSON.stringify(servicesCatalog));
+  syncWithSupabase('taller_services', servicesCatalog);
 }
 
 function saveParts() {
   localStorage.setItem('taller_parts', JSON.stringify(partsCatalog));
+  syncWithSupabase('taller_parts', partsCatalog);
 }
 
 function saveTeam() {
   localStorage.setItem('taller_team', JSON.stringify(teamMembers));
+  syncWithSupabase('taller_team', teamMembers);
 }
 
 function saveReminders() {
   localStorage.setItem('taller_reminders', JSON.stringify(reminders));
+  syncWithSupabase('taller_reminders', reminders);
 }
 
 // --- MODO DEMOSTRACIÓN / DATOS DE PRUEBA ---
@@ -1649,6 +1864,7 @@ window.deleteReminder = function() {
 
   reminders = reminders.filter(r => r.id !== reminderId);
   saveReminders();
+  deleteFromSupabase('taller_reminders', reminderId);
   closeModal('reminder-modal');
 
   if (typeof renderAgendaCalendar === 'function') renderAgendaCalendar();
@@ -5740,6 +5956,7 @@ window.deleteVehicleFromTable = function(vehicleId) {
   if (confirm('Â¿EstÃ¡s seguro de que deseas eliminar este registro de cotizaciÃ³n?')) {
     vehicles = vehicles.filter(v => v.id !== vehicleId);
     saveState();
+    deleteFromSupabase('taller_vehicles', vehicleId);
     renderApp();
     alert('Registro eliminado con Ã©xito.');
   }
@@ -6723,6 +6940,7 @@ window.deleteServiceFromCatalog = function(serviceId) {
   if (confirm('Â¿EstÃ¡s seguro de que deseas eliminar este servicio del catÃ¡logo?')) {
     servicesCatalog = servicesCatalog.filter(s => s.id !== serviceId);
     saveServices();
+    deleteFromSupabase('taller_services', serviceId);
     renderServiciosCatalogView();
   }
 };
@@ -6816,6 +7034,7 @@ window.deletePartFromCatalog = function(partId) {
   if (confirm('Â¿EstÃ¡s seguro de que deseas eliminar este repuesto del catÃ¡logo?')) {
     partsCatalog = partsCatalog.filter(p => p.id !== partId);
     saveParts();
+    deleteFromSupabase('taller_parts', partId);
     populateDatalists(); // Actualizar autocompletador!
     renderRepuestosCatalogView();
   }
@@ -6967,6 +7186,7 @@ window.deleteTeamMember = function(memberId) {
   if (confirm('¿Estás seguro de que deseas eliminar este miembro del equipo?')) {
     teamMembers = teamMembers.filter(t => t.id !== memberId);
     saveTeam();
+    deleteFromSupabase('taller_team', memberId);
     teamLoaded = false;
     renderEquipoListaView();
   }
@@ -7199,6 +7419,7 @@ window.deleteClientFromDB = function(clientId) {
   if (confirm('¿Estás seguro de que deseas eliminar este cliente permanentemente?')) {
     clients = clients.filter(c => c.id !== clientId);
     saveClients();
+    deleteFromSupabase('taller_clients', clientId);
     clientsLoaded = false;
     renderClientesListaView();
     showToast('Cliente eliminado con éxito.');
@@ -8298,6 +8519,7 @@ window.deleteVehicleFromDB = function(vehicleId) {
   if (confirm('Â¿EstÃ¡s seguro de que deseas eliminar este vehÃ­culo de la flota?')) {
     vehicles = vehicles.filter(v => v.id !== vehicleId);
     saveState();
+    deleteFromSupabase('taller_vehicles', vehicleId);
     renderApp();
   }
 };
