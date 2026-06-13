@@ -276,7 +276,8 @@ function loadWorkshopConfig() {
     document.getElementById('config-workshop-phone1').value = workshopConfig.phone1 || '';
     document.getElementById('config-workshop-phone2').value = workshopConfig.phone2 || '';
     document.getElementById('config-workshop-address').value = workshopConfig.address || '';
-    document.getElementById('config-workshop-rut').value = workshopConfig.rut || '';
+    const rutEl = document.getElementById('config-workshop-rut');
+    if (rutEl) rutEl.value = workshopConfig.rut || '';
     
     // Campos fiscales argentinos
     const cuitEl = document.getElementById('config-workshop-cuit');

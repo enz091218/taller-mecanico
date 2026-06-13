@@ -1410,10 +1410,7 @@
             <input type="text" id="config-workshop-address" style="background-color: var(--card-bg); border: 1.5px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; color: var(--text-primary);" placeholder="Ej: Av. Vitacura 1234, Santiago">
           </div>
 
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <label style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">RUT del Taller</label>
-            <input type="text" id="config-workshop-rut" style="background-color: var(--card-bg); border: 1.5px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; color: var(--text-primary);" placeholder="Ej: 76.543.210-K">
-          </div>
+
 
           <hr style="border: 0; border-top: 1px dashed var(--border-color); margin: 12px 0;">
           <h3 style="font-family: var(--font-display); font-weight: 700; font-size: 14px; color: var(--text-primary); margin: 0 0 4px 0; display: flex; align-items: center; gap: 6px;">
@@ -1527,19 +1524,7 @@
             </button>
           </div>
 
-          <hr style="border: 0; border-top: 1px dashed var(--border-color); margin: 16px 0 12px 0;">
-          <h3 style="font-family: var(--font-display); font-weight: 700; font-size: 14px; color: var(--text-primary); margin: 0 0 4px 0; display: flex; align-items: center; gap: 6px;">
-            <img src="https://http2.mlstatic.com/frontend-assets/ml-web-navigation/sandBackground-navigation-assets/ch-logo-favicon.png" style="width: 16px; height: 16px; border-radius: 3px;">
-            Conexión API Mercado Libre
-          </h3>
-          <p style="font-size: 11px; color: var(--text-muted); margin: 0 0 10px 0;">
-            Configura las credenciales obtenidas en tu cuenta de Mercado Libre Developers para realizar búsquedas de repuestos reales en tiempo real.
-          </p>
 
-          <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px;">
-            <label style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">Access Token de Producción / Desarrollo (User-scoped)</label>
-            <input type="password" id="config-workshop-meli-token" style="background-color: var(--card-bg); border: 1.5px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; color: var(--text-primary);" placeholder="Pega tu APP_ACCESS_TOKEN de Mercado Libre aquí...">
-          </div>
 
           <button onclick="saveWorkshopConfig()" style="background-color: var(--color-accent); color: white; border: none; font-weight: 700; padding: 10px 16px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; transition: all 0.2s;" onmouseover="this.style.opacity='0.9';" onmouseout="this.style.opacity='1';">
             <i data-lucide="save" style="width: 15px; height: 15px;"></i>
@@ -3513,7 +3498,7 @@
   <!-- Cliente de Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Lógica JavaScript Principal -->
-  <script src="app.js?v=4.4"></script>
+  <script src="app.js?v=4.5"></script>
 </body>
 </html>
 
