@@ -46,17 +46,17 @@ let workshopConfig = {
 };
 
 // --- INICIALIZACIÓN DE SUPABASE ---
-let supabase = null;
+let supabaseClient = null;
 const supabaseUrl = 'https://tdnrdvnqqpfmgarlozzu.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkbnJkdm5xcXBmbWdhcmxvenp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMDQyOTEsImV4cCI6MjA5Njg4MDI5MX0.c8-LMWmbEelCBvUFZ4CG2XNz_Y49eEHw2GqSeeHHmMM';
 
 if (window.supabase) {
-  supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+  supabaseClient = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
 }
 
 // Sincronización en segundo plano con Supabase (Upsert)
 async function syncWithSupabase(tableName, data) {
-  if (!supabase) return;
+  if (!supabaseClient) return;
   try {
     if (Array.isArray(data)) {
       if (data.length === 0) return;
@@ -94,7 +94,7 @@ async function syncWithSupabase(tableName, data) {
         }
         return { ...item };
       });
-      const { error } = await supabase.from(tableName).upsert(mappedData);
+      const { error } = await supabaseClient.from(tableName).upsert(mappedData);
       if (error) console.error(`Error de sync en ${tableName}:`, error);
     } else {
       const configItem = {
@@ -117,7 +117,7 @@ async function syncWithSupabase(tableName, data) {
         wa_template_lang: data.waTemplateLang,
         wa_base_url: data.waBaseUrl
       };
-      const { error } = await supabase.from(tableName).upsert(configItem);
+      const { error } = await supabaseClient.from(tableName).upsert(configItem);
       if (error) console.error(`Error de sync en ${tableName}:`, error);
     }
   } catch (err) {
@@ -127,9 +127,9 @@ async function syncWithSupabase(tableName, data) {
 
 // Eliminar de Supabase
 async function deleteFromSupabase(tableName, id) {
-  if (!supabase) return;
+  if (!supabaseClient) return;
   try {
-    const { error } = await supabase.from(tableName).delete().eq('id', id);
+    const { error } = await supabaseClient.from(tableName).delete().eq('id', id);
     if (error) console.error(`Error al eliminar en Supabase (${tableName}):`, error);
   } catch (err) {
     console.error("Error al eliminar:", err);
@@ -138,10 +138,10 @@ async function deleteFromSupabase(tableName, id) {
 
 // Cargar estado inicial desde Supabase
 async function loadStateFromSupabase() {
-  if (!supabase) return;
+  if (!supabaseClient) return;
   console.log("AutoTech: Sincronizando datos desde la base de datos Supabase...");
   try {
-    const { data: configData, error: configError } = await supabase.from('taller_config').select('*').eq('id', 'workshop_config');
+    const { data: configData, error: configError } = await supabaseClient.from('taller_config').select('*').eq('id', 'workshop_config');
     if (!configError && configData && configData.length > 0) {
       const dbConfig = configData[0];
       workshopConfig = {
@@ -166,32 +166,32 @@ async function loadStateFromSupabase() {
       localStorage.setItem('taller_workshop_config', JSON.stringify(workshopConfig));
       loadWorkshopConfig();
     }
-    const { data: clientData, error: clientError } = await supabase.from('taller_clients').select('*');
+    const { data: clientData, error: clientError } = await supabaseClient.from('taller_clients').select('*');
     if (!clientError && clientData && clientData.length > 0) {
       clients = clientData;
       localStorage.setItem('taller_clients', JSON.stringify(clients));
     }
-    const { data: serviceData, error: serviceError } = await supabase.from('taller_services').select('*');
+    const { data: serviceData, error: serviceError } = await supabaseClient.from('taller_services').select('*');
     if (!serviceError && serviceData && serviceData.length > 0) {
       servicesCatalog = serviceData;
       localStorage.setItem('taller_services', JSON.stringify(servicesCatalog));
     }
-    const { data: partData, error: partError } = await supabase.from('taller_parts').select('*');
+    const { data: partData, error: partError } = await supabaseClient.from('taller_parts').select('*');
     if (!partError && partData && partData.length > 0) {
       partsCatalog = partData;
       localStorage.setItem('taller_parts', JSON.stringify(partsCatalog));
     }
-    const { data: teamData, error: teamError } = await supabase.from('taller_team').select('*');
+    const { data: teamData, error: teamError } = await supabaseClient.from('taller_team').select('*');
     if (!teamError && teamData && teamData.length > 0) {
       teamMembers = teamData;
       localStorage.setItem('taller_team', JSON.stringify(teamMembers));
     }
-    const { data: reminderData, error: reminderError } = await supabase.from('taller_reminders').select('*');
+    const { data: reminderData, error: reminderError } = await supabaseClient.from('taller_reminders').select('*');
     if (!reminderError && reminderData) {
       reminders = reminderData;
       localStorage.setItem('taller_reminders', JSON.stringify(reminders));
     }
-    const { data: regData, error: regError } = await supabase.from('taller_vehicle_registry').select('*').eq('id', 'vehicle_registry');
+    const { data: regData, error: regError } = await supabaseClient.from('taller_vehicle_registry').select('*').eq('id', 'vehicle_registry');
     if (!regError && regData && regData.length > 0) {
       vehicleRegistry = {
         brands: regData[0].brands || [],
@@ -200,7 +200,7 @@ async function loadStateFromSupabase() {
       };
       localStorage.setItem('taller_vehicle_registry', JSON.stringify(vehicleRegistry));
     }
-    const { data: vehData, error: vehError } = await supabase.from('taller_vehicles').select('*');
+    const { data: vehData, error: vehError } = await supabaseClient.from('taller_vehicles').select('*');
     if (!vehError && vehData) {
       vehicles = vehData.map(item => ({
         id: item.id,
@@ -1324,8 +1324,8 @@ function saveState() {
 
 window.saveVehicleRegistry = function() {
   localStorage.setItem('taller_vehicle_registry', JSON.stringify(vehicleRegistry));
-  if (supabase) {
-    supabase.from('taller_vehicle_registry').upsert({
+  if (supabaseClient) {
+    supabaseClient.from('taller_vehicle_registry').upsert({
       id: 'vehicle_registry',
       brands: vehicleRegistry.brands,
       models: vehicleRegistry.models,
